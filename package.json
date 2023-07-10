@@ -1,0 +1,36 @@
+{
+  "scripts": {
+    "deploy": "npx hardhat run ./scripts/deploy.js",
+    "vault": "npx hardhat run ./scripts/vault.js",
+    "test": "npx hardhat run ./scripts/test.js",
+    "sm": "npx hardhat run ./scripts/SmallSettlement.js",
+    "la": "npx hardhat run ./scripts/LargeSettlement.js"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.8.1",
+    "@openzeppelin/hardhat-upgrades": "^1.22.1",
+    "bip39": "^3.1.0",
+    "chai": "^4.3.7",
+    "crypto-js": "^4.1.1",
+    "dotenv": "^16.0.3",
+    "ethereumjs-util": "^7.1.5",
+    "ethjs-abi": "^0.2.1",
+    "hardaht": "^1.0.1",
+    "hardhat-abi-exporter": "^2.10.1",
+    "hardhat-deploy": "^0.11.23",
+    "hardhat-deploy-ethers": "^0.3.0-beta.13",
+    "hardhat-gas-reporter": "^1.0.9",
+    "hdkey": "^2.1.0",
+    "i": "^0.3.7",
+    "keccak256": "^1.0.6",
+    "web3": "^1.8.2"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^2.0.1",
+    "@nomiclabs/hardhat-ethers": "npm:hardhat-deploy-ethers@^0.3.0-beta.13",
+    "@nomiclabs/hardhat-etherscan": "^3.1.7",
+    "ethers": "^5.7.2",
+    "hardhat": "^2.12.7",
+    "mocha": "^10.2.0"
+  }
+}
