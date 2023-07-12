@@ -11,15 +11,13 @@ interface ILargeSettlement{
     
     function totalUsdt(address user_) external view  returns(uint256);
 
-    function setL1Amount(address user_, address coin_ , uint256 amount_, bool isFlag) external;
-
-   function setTotalUsdt(address user_, uint256 amount_, bool isFlag_) external;
+    function setTotalUsdt(address user_, uint256 amount_, bool isFlag_) external;
    
-   function timeLock() external view returns(bool);
+    function timeLock() external view returns(bool);
 
-   function setLastSmallsettlement() external;
+    function setLastSmallsettlement() external;
 
-   function setWithdrawalTim(uint256 time_)external;
+    function setWithdrawalTim(uint256 time_)external;
 
     event eventReceive(address, uint256, address, LargeSettlementData.OperateType);
     

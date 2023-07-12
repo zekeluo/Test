@@ -5,15 +5,12 @@ import "./interface/ILargeSettlement.sol";
 import "./interface/IInterersts.sol";
 import "../LayerZero/NonblockingLzApp.sol";
 import "./data/LargeSettlementData.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract LargeSettlement is NonblockingLzApp, LargeSettlementData, ILargeSettlement{
+contract LargeSettlement is NonblockingLzApp, LargeSettlementData, ILargeSettlement, ReentrancyGuard{
 
-    mapping(address => uint256 )  public override totalUsdt;
+    mapping(address => uint256) public override totalUsdt;
     bool public override timeLock;
-    uint256 public totalPrincipal; // USDT的总本金
-    uint256 public totalValueBefore;
-    uint256 public totalPrincipalBefore;
-    uint256  constant precision = 100000;
 
     event DepostBefore(uint256 totalValue, uint256 totalPrincipal, uint256 userPrincipal);
     event DepostAfter(uint256 totalValue, uint256 totalPrincipal, uint256 userPrincipal);
@@ -38,7 +35,7 @@ contract LargeSettlement is NonblockingLzApp, LargeSettlementData, ILargeSettlem
         usdt = usdt_;
     }
 
-    function checkOutFee()external  payable   {
+    function checkOutFee() external payable nonReentrant{
         //手续费
         address[] memory getCoinFeeAdd = ISmallSettlement(smallSettlement).getCoinFeeAdd();
         uint[] memory _amount = new uint[](getCoinFeeAdd.length); 
@@ -58,9 +55,9 @@ contract LargeSettlement is NonblockingLzApp, LargeSettlementData, ILargeSettlem
         emit CheckOutFee(msg.sender, getCoinFeeAdd, _amount);
     }
 
-    function checkOut(address user_, Data memory data_,address usdt_) onlyNode payable external{
+    function checkOut(address user_, Data memory data_,address usdt_) payable external onlyNode nonReentrant{
         require(ISmallSettlement(smallSettlement).hasRole(NODE_ROLE, ISmallSettlement(smallSettlement).verifyEcrecover(data_.messageHash,data_.signature)),"The signer is not a node");
-        require(keccak256(abi.encodePacked(data_.user,data_.capitaMerkleRoot,data_.coinList,data_.withdrawnValues,data_.nativeFee, data_.checkOutType)) == data_.messageHash ,"Incorrect data");
+        require(keccak256(abi.encodePacked(data_.user,data_.capitaMerkleRoot,data_.coinList,data_.withdrawnValues, data_.checkOutType)) == data_.messageHash ,"Incorrect data");
         require(ISmallSettlement(smallSettlement).isOpen() == true,"Closing");
         bytes memory encoded ;
         //提币
@@ -110,7 +107,7 @@ contract LargeSettlement is NonblockingLzApp, LargeSettlementData, ILargeSettlem
     }
 
 
-    function checkOutForUser()payable   external {
+    function checkOutForUser() external payable nonReentrant{
         uint256 capitalBalance;
         uint256 trdingBalance;
 
@@ -224,15 +221,6 @@ contract LargeSettlement is NonblockingLzApp, LargeSettlementData, ILargeSettlem
 
     function setInterests(address _interests) external onlyOwner{
         interests = _interests;
-    }
-
-    function setL1Amount(address user_, address coin_ , uint256 amount_, bool isFlag) external override {
-        require(msg.sender == smallSettlement, "no smallSettlement");
-        if(isFlag){
-            _deAmountL1[user_][coin_] += amount_;
-        }else{
-            _deAmountL1[user_][coin_] -= amount_;
-        }
     }
 
     function deAmountL1(address user, address coinType) external view override returns(uint256){

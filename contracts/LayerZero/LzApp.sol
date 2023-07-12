@@ -71,7 +71,7 @@ abstract contract LzApp is Ownable2Step, ILayerZeroReceiver, ILayerZeroUserAppli
         lzEndpoint.retryPayload(_srcChainId,_srcAddress, _payload);
     }
 
-    function hasStoredPayload(uint16 _srcChainId, bytes calldata _srcAddress) external   {
+    function hasStoredPayload(uint16 _srcChainId, bytes calldata _srcAddress) external view{
         lzEndpoint.hasStoredPayload(_srcChainId,_srcAddress);
     }
     

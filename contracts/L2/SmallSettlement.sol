@@ -5,8 +5,9 @@ import "./interface/ILargeSettlement.sol";
 import "./interface/ISmallSettlement.sol";
 import "./interface/IInterersts.sol";
 import "./data/SmallSettlementData.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract SmallSettlement is Ownable2Step, SmallSettlementData, ISmallSettlement{
+contract SmallSettlement is Ownable2Step, SmallSettlementData, ISmallSettlement, ReentrancyGuard{
 
     mapping(address => bool)public  override  coinFeeMa;
     
@@ -36,7 +37,7 @@ contract SmallSettlement is Ownable2Step, SmallSettlementData, ISmallSettlement{
     }
 
     //用户划转预扣
-    function withholding(WithholdingData memory data_) public{
+    function withholding(WithholdingData memory data_) public nonReentrant{
         // 校验用户hash
         require(keccak256(abi.encodePacked(data_.addList, data_.amount, data_.coinType, data_.user)) == data_.messageHashUser, "withholding: user hash is error");
         // 校验节点hash
@@ -66,20 +67,20 @@ contract SmallSettlement is Ownable2Step, SmallSettlementData, ISmallSettlement{
 
     //根据签名方式分
     //1.充值,划转(1.资金账户  2.交易账户),提币(A)
-    function verifySignatureA(Bill memory  bill_,address user_) view internal{
+    function verifySignatureA(Bill memory  bill_) view internal{
         require(keccak256(abi.encodePacked(bill_.id, bill_.user, bill_.balance, bill_.coinType, bill_.actionType, bill_.coinAmount, bill_.coinAddress, bill_.isNegative, bill_.isNegativeforTransfer, bill_.orderType)) == bill_.messageHash, "verifySignatureA: hash is error");
         require(hasRole(NODE_ROLE, verifyEcrecover(bill_.messageHash,
         bill_.signature)),"The signer is not a node");
     }
     
     //(划转)
-    function transferOfFunds(Bill memory bill_,address user_) private{
+    function transferOfFunds(Bill memory bill_) private{
        bytes32 root;
        require(_isOpen == true,"closing");
-       Account storage account = accounts[user_];
+       Account storage account = accounts[bill_.user];
        require(bill_.balance.length == bill_.coinType.length,"Length faild");
-       bytes32 [] memory capitaMroots_ = capitaMRoot[user_];
-       bytes32 [] memory tradingroots_ = tradingMRoot[user_];
+       bytes32 [] memory capitaMroots_ = capitaMRoot[bill_.user];
+       bytes32 [] memory tradingroots_ = tradingMRoot[bill_.user];
        for(uint256 i = 0; i<bill_.balance.length; i++){
             if(bill_.actionType){
                 if(bill_.isNegativeforTransfer){
@@ -129,25 +130,25 @@ contract SmallSettlement is Ownable2Step, SmallSettlementData, ISmallSettlement{
     }
 
     //(1充值,2提现,3划转)
-    function verificationBook(Bill[] memory  bill_,address user_) onlyNode external{
+    function verificationBook(Bill[] memory  bill_) external onlyNode nonReentrant{
            require(ILargeSettlement(largeSettlement).timeLock()== false, "Lock has been closed");
            ILargeSettlement(largeSettlement).setLastSmallsettlement();
         for(uint256 i = 0; i <bill_.length; i++){
             require(!ids[bill_[i].id], "verificationBook: id already exists");
             ids[bill_[i].id] = true;
             if(bill_[i].orderType == 1 || bill_[i].orderType == 2){
-                verifySignatureA(bill_[i],user_);
-                _build(bill_[i],user_);
+                verifySignatureA(bill_[i]);
+                _build(bill_[i]);
             }else if(bill_[i].orderType == 3){  //这样不会重复
-                verifySignatureA(bill_[i],user_);
-                transferOfFunds(bill_[i],user_);
+                verifySignatureA(bill_[i]);
+                transferOfFunds(bill_[i]);
             }
         }
         emit eventVerificationBook();
     }
 
      //(4.交易)
-    function verificationBookFoTrade(TradeBills[] memory tradeBills) onlyNode external{
+    function verificationBookFoTrade(TradeBills[] memory tradeBills) external onlyNode nonReentrant{
         require(tradeBills.length > 0, "tradeBills length is error");
         require(ILargeSettlement(largeSettlement).timeLock()== false, "Lock has been closed");
         ILargeSettlement(largeSettlement).setLastSmallsettlement();
@@ -231,17 +232,17 @@ contract SmallSettlement is Ownable2Step, SmallSettlementData, ISmallSettlement{
      }
 
     //(充值,提币建树)
-    function _build(Bill memory  bs_,address user_) internal returns(bytes32,uint256,address,uint256,address) {
+    function _build(Bill memory bs_) internal returns(bytes32,uint256,address,uint256,address) {
         bytes32 root;
         //资金账户
-        Account storage account =  accounts[user_];
+        Account storage account =  accounts[bs_.user];
         isCoinList(bs_.coinAddress,bs_.coinAddress);
         require (bs_.nonce == account.capitalNonce + 1,"capital nonce failed");
         //充值
         if(bs_.orderType == 1){
             //deAmountL1 deAmountL2 确保L2上传充值订单的数量,不能大于L1充值数量即可
-            require(ILargeSettlement(largeSettlement).deAmountL1(user_, bs_.coinAddress) >= deAmountL2[user_][bs_.coinAddress]+bs_.coinAmount,"Deposit failure");
-            deAmountL2[user_][bs_.coinAddress] += bs_.coinAmount;
+            require(ILargeSettlement(largeSettlement).deAmountL1(bs_.user, bs_.coinAddress) >= deAmountL2[bs_.user][bs_.coinAddress]+bs_.coinAmount,"Deposit failure");
+            deAmountL2[bs_.user][bs_.coinAddress] += bs_.coinAmount;
         }
         
         if(capitaMRoot[bs_.user].length != 0){
@@ -268,11 +269,11 @@ contract SmallSettlement is Ownable2Step, SmallSettlementData, ISmallSettlement{
 
     function getData(address user_) external view returns(OutData memory) {
         (uint nativeFee,) = ILargeSettlement(largeSettlement).estimateFee(user_);
-        return OutData(user_, accounts[user_].capitalMerkleRoot, IInterersts(interests).totalShares(), IInterersts(interests).shares(user_), nativeFee);
+        return OutData(user_, accounts[user_].capitalMerkleRoot, nativeFee);
     }
 
     function getAccount(address address_,address type_) public view override returns(address,bytes32,bytes32,uint256,uint256,uint256){
-        Account  storage account = accounts[address_]; 
+        Account storage account = accounts[address_]; 
         return (address_, account.capitalMerkleRoot, account.tradingMerkleRoot, account.capitalBalance[type_], account.capitalNonce, account.tradingBalance[type_]);
     }
 

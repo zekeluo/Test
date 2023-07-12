@@ -35,20 +35,18 @@ contract SmallSettlementData{
     struct OutData{
         address user; 
         bytes32 capitaMerkleRoot; 
-        uint256 totalShares; 
-        uint256 shares; 
         uint nativeFee; 
     }
    
-    bool _isOpen;
+    bool internal _isOpen;
 
-    address[]  public _coinList;
+    address[] internal _coinList;
 
     address public largeSettlement; // 大结算合约地址
 
     address public interests;
 
-    mapping(bytes32 => RoleData) public _roles;
+    mapping(bytes32 => RoleData) internal _roles;
 
     //映射用户的授权对象
     mapping(address => mapping(address => bool)) public auobject;
@@ -111,9 +109,9 @@ contract SmallSettlementData{
         bytes signature;
     }
 
-    address[]  public   coinFeeAdd;
+    address[] public coinFeeAdd;
 
-    mapping (address  => uint256)  public   totalFee;
+    mapping(address => uint256) public totalFee;
     
 }
 

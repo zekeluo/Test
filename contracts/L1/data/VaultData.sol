@@ -16,26 +16,17 @@ contract VaultData {
     bytes32 public constant FEE_ROLE = keccak256("FEE_ROLE");
 
     uint16 public dstChainId;
-    address public interest;
     address public aave;
     bytes public adapterParams;
    
     struct Account {
       address user;
-      bytes32 capitalMerkleRoot;
       mapping(address => uint256) capitalBalance;
-      uint256 capitalNonce;
-      bytes32 tradingMerkleRoot;
-      mapping(address => uint256) tradingBalance;
-      uint256 tradingNonce;
-      uint nativeFee;
     }
 
    mapping(address => Account) public accounts;
    
    mapping(address => bool) public isSupDe;
-   
-   mapping(address => uint256)private latestShare;
    
    bool public isOpen;
 
@@ -44,7 +35,6 @@ contract VaultData {
         bytes32 capitalMerkleRoot; 
         address [] coinList; 
         uint256 [] withdrawnValues;
-        uint256 nativeFee;
         uint8 checkOutType; // 1 提币 2 利息
         bytes32 messageHash; 
         bytes signature;
@@ -55,13 +45,16 @@ contract VaultData {
         bytes32 adminRole;
     }
 
-    mapping(bytes32 => RoleData) public _roles;
+    mapping(bytes32 => RoleData) internal _roles;
 
-    bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;
-
-    address[] coinList;
+    address[] public coinList;
 
     mapping(address => bool) public isTrueForCoin;
     
     address public usdt;
+
+    mapping(address => uint256 ) public interestAmount;
+    mapping(address => bool) public deCoinList;
+    mapping(address => uint256 ) public totalFee;
+    uint256 public totalPrincipal;
 }

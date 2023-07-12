@@ -3,20 +3,15 @@ pragma solidity ^0.8.0;
 import "./interface/IVault.sol";
 import "./data/VaultData.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../LayerZero/NonblockingLzApp.sol";
 import "../Aave/ILendingPool.sol";
 import "../Aave/DataTypes.sol";
-import "../Aave/IStableDebtToken.sol";
-import "../Aave/IVariableDebtToken.sol";
 
-contract Vault is IVault,VaultData,NonblockingLzApp{
+contract Vault is IVault,VaultData,NonblockingLzApp,ReentrancyGuard{
 
-    mapping(address => uint256 ) public interestAmount;
-    mapping(address => bool) public deCoinList;
-    mapping(address => uint256 ) public totalFee;
-    mapping(address => bool) public whlieList;
-    uint256 public totalPrincipal;
+    using SafeERC20 for IERC20;
 
     constructor(address lendingPool_, address lzEndpoint_, uint16 dstChainId_,address usdt_)NonblockingLzApp(lzEndpoint_) {
        aave = lendingPool_;
@@ -25,18 +20,13 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
        usdt =usdt_ ;
     }
     
-    function deposit(address type_, uint256 amount_) payable override external{
+    function deposit(address type_, uint256 amount_) payable override external nonReentrant{
         bool isSupDe_;
         uint256 _amount;
         require(isOpen == true,"Closing");
         require(deCoinList[type_] == true, "Recharge in this currency is not supported");
-
         require(IERC20(type_).balanceOf(msg.sender) >= amount_, "Balance insufficient");
-        require(IERC20(type_).allowance(msg.sender,address(this)) >= amount_,"No authorization");
-
-        uint256 balance =  IERC20(type_).balanceOf(msg.sender);
-        IERC20(type_).transferFrom(msg.sender,address(this),amount_);
-        require(IERC20(type_).balanceOf(msg.sender) == balance-amount_, "Balance insufficient");
+        IERC20(type_).safeTransferFrom(msg.sender,address(this),amount_);
         
         (uint256 va,) = estimateFee(msg.sender);
         require(va <= msg.value,"not enough native for fees");
@@ -47,24 +37,30 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
             _depositToAAVE(type_,amount_);
             totalPrincipal += amount_;
 
-            if( amount_ +_oldTotalValue - getTotalValue(usdt) == 1 ) {
-               _amount = getTotalValue(usdt)+1;
+            if(amount_ + _oldTotalValue - getTotalValue(usdt) == 1){
+                _amount = getTotalValue(usdt) + 1;
+            }else{
+                _amount = getTotalValue(usdt);
             }
+        }else{
+            _amount = getTotalValue(usdt);
         }
-        _amount = getTotalValue(usdt);
 
         _sentToL1(dstChainId,abi.encode(msg.sender,type_,amount_,isSupDe_, OperateType.DEPOSIT, _amount - totalPrincipal),msg.value);
 
         emit eventDeposit(type_,amount_,msg.sender);
     }
 
-    function depositETH(uint256 amount_) override external payable {
+    function depositETH(uint256 amount_) override external payable nonReentrant{
         require(isOpen == true,"closing");
         (uint256 va,) = estimateFee(msg.sender);
-        require(amount_+va <= msg.value,"amount no match");
-        require(va <= msg.value,"not enough native for fees");
-        
+        uint256 gentle = amount_ + va;
+        require(gentle <= msg.value,"amount no match");
         _sentToL1(dstChainId,abi.encode(msg.sender,address(0),amount_,false,OperateType.DEPOSITETH,getTotalValue(usdt) - totalPrincipal),va);
+        uint256 excessive = msg.value - gentle;
+        if(excessive > 0){
+            payable(msg.sender).transfer(excessive);
+        }
         emit eventDepositETH(amount_,msg.sender);
     }
 
@@ -72,7 +68,7 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
         isSupDe[add_] = re;
     }
     
-    function withdraw(uint256[] memory amount_,address[] memory coinType_) override external{
+    function withdraw(uint256[] memory amount_,address[] memory coinType_) override external nonReentrant{
         require(isOpen == true,"closing");
         Account storage _ac  = accounts[msg.sender];
         require(amount_.length == coinType_.length,"Array mismatch");
@@ -85,8 +81,7 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
             if(coinType_[i] == address(0)){
                 payable(msg.sender).transfer(amount_[i]);
             }else{
-                bool  transfer= IERC20(coinType_[i]).transfer(msg.sender, amount_[i]);
-                require(transfer == true,"Withdraw failed");
+                IERC20(coinType_[i]).safeTransfer(msg.sender, amount_[i]);
             }
         }
         emit eventWithdraw(coinType_,amount_,msg.sender);
@@ -121,15 +116,6 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
         return (v, r, s);
     }
 
-    // function getNativeFee(address user_)view public returns(uint){
-    //     Account  storage account = accounts[user_]; 
-    //     return (account.nativeFee);
-    // }
-
-    // function  getInterest(address user_) external view returns(uint256) {
-    //     return  interestAmount[user_];
-    // }
-
     function setWhilLlist(address  add,uint256 type_) external onlyOwner{
         if(type_==1) {
              _setupRole(NODE_ROLE,add);
@@ -139,15 +125,15 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
     }
 
     //利息大结算之后,直接把最新的利息分配到L1,然后维护L1和L2账本
-    function withdrawInterest(uint256 amount_,address coinType_) public {
+    function withdrawInterest(uint256 amount_,address coinType_) public nonReentrant{
         require(isOpen == true,"closing");
         require(interestAmount[msg.sender] >= amount_,"Not sufficient funds");
         interestAmount[msg.sender] -= amount_;
-        IERC20(coinType_).transfer(msg.sender ,amount_);
+        IERC20(coinType_).safeTransfer(msg.sender ,amount_);
         emit eventWithdrawInterest(msg.sender, coinType_, amount_);
     }
 
-    function getBalance(address address_) public view returns (address,bytes32,address[] memory, uint256 [] memory,uint256) {
+    function getBalance(address address_) public view returns (address,address[] memory, uint256 [] memory) {
         Account storage account = accounts[address_]; 
         uint256 count = 0;
 
@@ -168,54 +154,13 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
                 index++;
             }
         }
-        return (account.user,account.capitalMerkleRoot,coin,amount,account.capitalNonce);
+        return (account.user, coin, amount);
     }
 
     function setAdapterParams(uint16 version,uint  gasForDestinationLzReceive) onlyOwner public {
         adapterParams = abi.encodePacked(version, gasForDestinationLzReceive);
     }
-
-    // Function to get the USDT balance of the user
-    // function getBalanceFromAAVE(address type_,address fromAdd_) public view returns (uint256) {
-    //     // // Get the user data of the current address
-    //     (uint256 currentBalance,, uint256 currentBorrowBalance,,,,, ) = getUserReserveData(type_, fromAdd_);
-    //     uint256 usdtBalance = currentBalance - currentBorrowBalance;
-    //     return usdtBalance;
-    // }
-
-    // function getUserReserveData(address asset, address user)    
-    //     public
-    //     view
-    //     returns (
-    //     uint256 currentATokenBalance,
-    //     uint256 currentStableDebt,
-    //     uint256 currentVariableDebt,
-    //     uint256 principalStableDebt,
-    //     uint256 scaledVariableDebt,
-    //     uint256 stableBorrowRate,
-    //     uint256 liquidityRate,
-    //     uint40 stableRateLastUpdated
-    //     )
-    // {
-    //     DataTypes.ReserveData memory reserve =
-    //     ILendingPool(aave).getReserveData(asset);
-    //     currentATokenBalance = IERC20Metadata(reserve.aTokenAddress).balanceOf(user);
-    //     currentVariableDebt = IERC20Metadata(reserve.variableDebtTokenAddress).balanceOf(user);
-    //     currentStableDebt = IERC20Metadata(reserve.stableDebtTokenAddress).balanceOf(user);
-    //     principalStableDebt = IStableDebtToken(reserve.stableDebtTokenAddress).principalBalanceOf(user);
-    //     scaledVariableDebt = IVariableDebtToken(reserve.variableDebtTokenAddress).scaledBalanceOf(user);
-    //     liquidityRate = reserve.currentLiquidityRate;
-    //     stableBorrowRate = IStableDebtToken(reserve.stableDebtTokenAddress).getUserStableRate(user);
-    //     stableRateLastUpdated = IStableDebtToken(reserve.stableDebtTokenAddress).getUserLastUpdated(
-    //     user
-    //     );
-    // }
     
-    function getATokenWithToken(address add_)public view  returns(address){
-        // Get the aUSDT token instance from the lending pool
-        return ILendingPool(aave).getReserveData(add_).aTokenAddress;
-    }
-
     function getOracle(uint16 remoteChainId) external view returns (address _oracle) {
         bytes memory bytesOracle = lzEndpoint.getConfig(lzEndpoint.getSendVersion(address(this)), remoteChainId, address(this), 6);
         assembly {
@@ -282,7 +227,6 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
                 data.capitalMerkleRoot,
                 abi.encodePacked(data.coinList),
                 abi.encodePacked(data.withdrawnValues),
-                data.nativeFee,
                 data.checkOutType
             );
 
@@ -292,8 +236,6 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
 
             Account storage myAccount = accounts[data.user];
             myAccount.user = data.user;
-            myAccount.capitalMerkleRoot =  data.capitalMerkleRoot;
-            myAccount.nativeFee = data.nativeFee;
 
             for(uint256 i =0 ; i < data.coinList.length; i++){
                 isCoinList(data.coinList[i]);
@@ -355,14 +297,14 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
         }
     }
 
-    function withdrawFee(address add_, uint256 amount_) external{
+    function withdrawFee(address add_, uint256 amount_) external nonReentrant{
         require(totalFee[add_] >= amount_,"Not sufficient funds");
         require(hasRole(FEE_ROLE,msg.sender)==true,"Permission Denied");
         totalFee[add_] -= amount_;
         if(add_ == address(0)){
             payable(msg.sender).transfer(amount_);
         }else{
-            IERC20(add_).transfer(msg.sender ,amount_);
+            IERC20(add_).safeTransfer(msg.sender ,amount_);
         }
         emit eventWithdrawFee(msg.sender, add_, amount_);
     }
@@ -397,7 +339,7 @@ contract Vault is IVault,VaultData,NonblockingLzApp{
     {
         DataTypes.ReserveData memory reserve =
         ILendingPool(aave).getReserveData(asset);
-        currentATokenBalance = IERC20Metadata(reserve.aTokenAddress).balanceOf(address(this));
+        currentATokenBalance = IERC20(reserve.aTokenAddress).balanceOf(address(this));
     }
 
 }

@@ -13,12 +13,13 @@ contract LargeSettlementData{
 
     bytes32 public constant NODE_ROLE = keccak256("NODE_ROLE");
 
+    uint256 constant public precision = 100000;
+
     struct Data{
         address user; 
         bytes32 capitaMerkleRoot; 
         address [] coinList; 
         uint256 [] withdrawnValues;
-        uint256 nativeFee;
         uint8 checkOutType; // 1 提币 2 利息
         bytes32  messageHash; 
         bytes signature;
@@ -32,7 +33,7 @@ contract LargeSettlementData{
 
     bytes public adapterParams;
 
-    mapping(address => mapping(address => uint256)) _deAmountL1;
+    mapping(address => mapping(address => uint256)) internal _deAmountL1;
 
     uint256 public totalValue;
 
@@ -45,5 +46,7 @@ contract LargeSettlementData{
 
     uint256 public apy;
 
-
+    uint256 public totalPrincipal; // USDT的总本金
+    uint256 public totalValueBefore;
+    uint256 public totalPrincipalBefore;
 }

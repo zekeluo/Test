@@ -9,13 +9,12 @@ import "hardhat/console.sol";
 contract Interests is Ownable2Step, IInterersts{
 
     uint256 public override totalShares; // 总股数
-    uint256 public currentPrice = 1; // 每股价值 (实时更新)
     address public smallSettlement;
     address public largeSettlement;
 
     mapping (address => uint256) public override shares; // 用户股数
 
-    uint256 constant precision = 100000;
+    uint256 constant public precision = 100000;
 
     event UpdateDepositBefore(address user, uint256 amount, uint256 userShare, uint256 totalShares, uint256 totalValue);
     event UpdateDepositAfter(address user, uint256 amount, uint256 userShare, uint256 totalShares, uint256 totalValue);
@@ -63,7 +62,6 @@ contract Interests is Ownable2Step, IInterersts{
             shares[user_] += amount_ * totalShares / ILargeSettlement(largeSettlement).getTotalValue() ;
                              
             totalShares = newTotalShares;
-            currentPrice = ILargeSettlement(largeSettlement).getTotalValue() / totalShares;
         }
 
         emit UpdateDepositAfter(user_, amount_, shares[user_], totalShares, getBalanceWithInterest(user_));
